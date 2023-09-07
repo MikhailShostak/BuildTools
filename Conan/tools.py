@@ -25,6 +25,7 @@ class ProjectTools:
         self.build_dir = os.path.join(self.project_dir, 'Build', self.configuration, self.target)
 
         if args.Command == "Generate":
+            self.generator = args.Generator
             self.generate()
         elif args.Command == "Build":
             self.build()
@@ -70,7 +71,7 @@ class ProjectTools:
                 "label": generate_task_name,
                 "type": "shell",
                 "command": get_tools_path(),
-                "args": ["Generate", f"--Target={target_name}", f"--Configuration=Debug"]
+                "args": ["Generate", f"--Target={target_name}", f"--Configuration=Debug", f"--Generator=Ninja"]
             })
 
             if target.get('Type', None) != 'Interface':
@@ -175,7 +176,9 @@ class ProjectTools:
         shutil.copy(src_conanfile, dst_conanfile)
 
         os.chdir(self.build_dir)
-        args = ["conan", "install", "conanfile.py", f"--settings=build_type={self.configuration}", "-c", "tools.cmake.cmaketoolchain:generator=Ninja", "--build=missing"]
+        args = ["conan", "install", "conanfile.py", f"--settings=build_type={self.configuration}", "--build=missing"]
+        if self.generator:
+            args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
         print(*args)
         subprocess.run(args, check=True)
 
@@ -197,6 +200,7 @@ def main():
     generate_parser = subparsers.add_parser("Generate", help="Generate")
     generate_parser.add_argument("--Project", help="Project", default=os.getcwd())
     generate_parser.add_argument("--Target", help="Target")
+    generate_parser.add_argument("--Generator", help="Generator", default=None)
     generate_parser.add_argument("--Configuration", help="Target", default='Release')
 
     build_parser = subparsers.add_parser("Build", help="Build")
