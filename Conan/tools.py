@@ -71,7 +71,7 @@ class ProjectTools:
                 "label": generate_task_name,
                 "type": "shell",
                 "command": get_tools_path(),
-                "args": ["Generate", f"--Target={target_name}", f"--Configuration=Debug", f"--Generator=Ninja"]
+                "args": ["Generate", f"--Target={target_name}", f"--Configuration={self.configuration}", f"--Generator=Ninja"]
             })
 
             if target.get('Type', None) != 'Interface':
@@ -90,7 +90,7 @@ class ProjectTools:
                     "label": build_task_name,
                     "type": "shell",
                     "command": get_tools_path(),
-                    "args": ["Build", f"--Target={target_name}", f"--Configuration=Debug"]
+                    "args": ["Build", f"--Target={target_name}", f"--Configuration={self.configuration}"]
                 })
 
         with open(path, 'w') as f:
@@ -123,9 +123,9 @@ class ProjectTools:
                 "type": "cppvsdbg",
                 "request": "launch",
                 "preLaunchTask": f"B: {target_name}",
-                "program": '${workspaceFolder}' + f"/Build/Debug/{target_name}/{os.path.basename(target_name)}.exe",
-                "envFile": '${workspaceFolder}' + f"/Build/Debug/{target_name}/conanrun.env",
-                "symbolSearchPath": '${workspaceFolder}' + f"/Build/Debug/{target_name}",
+                "program": '${workspaceFolder}' + f"/Build/{self.configuration}/{target_name}/{os.path.basename(target_name)}.exe",
+                "envFile": '${workspaceFolder}' + f"/Build/{self.configuration}/{target_name}/conanrun.env",
+                "symbolSearchPath": '${workspaceFolder}' + f"/Build/{self.configuration}/{target_name}",
                 "externalConsole": False,
                 "logging": {
                     "moduleLoad": False,
@@ -186,7 +186,7 @@ class ProjectTools:
         print("Building...")
 
         os.chdir(self.build_dir)
-        args = ["cmake", "--build", self.build_dir]
+        args = ["cmake", "--build", self.build_dir, f'--config={self.configuration}']
         print(*args)
         subprocess.run(args, check=True)
 
