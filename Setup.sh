@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ROOT=$(dirname "$0")
+ROOT=$(cd "$(dirname "$0")"; pwd)
 
 echo "Initializing .venv..."
 python3 -m venv "$ROOT/.venv"
