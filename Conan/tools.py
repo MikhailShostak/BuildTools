@@ -175,13 +175,17 @@ class ProjectTools:
         shutil.copy(src_conanfile, dst_conanfile)
 
         os.chdir(self.build_dir)
-        subprocess.run(["conan", "install", "conanfile.py", f"--settings=build_type={self.configuration}", "-c", "tools.cmake.cmaketoolchain:generator=Ninja", "--build=missing"], check=True)
+        args = ["conan", "install", "conanfile.py", f"--settings=build_type={self.configuration}", "-c", "tools.cmake.cmaketoolchain:generator=Ninja", "--build=missing"]
+        print(*args)
+        subprocess.run(args, check=True)
 
     def build(self):
         print("Building...")
 
         os.chdir(self.build_dir)
-        subprocess.run(["cmake", "--build", self.build_dir], check=True)
+        args = ["cmake", "--build", self.build_dir]
+        print(*args)
+        subprocess.run(args, check=True)
 
     def package(self):
         print("Packaging...")
