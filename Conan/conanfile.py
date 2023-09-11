@@ -148,6 +148,8 @@ class TargetGenerator(ConanFile):
         for e in ['inl']:
             inline_include_file_paths.extend(self.collect_file_paths(include_base_dir, e))
 
+        precompile_local_haders = self.target.get('PrecompileLocalHeaders', False)
+
         package_header_file_name = f'{cmake_target_name}.hpp'
         package_header_file_path = os.path.join(script_folder, package_header_file_name)
 
@@ -176,8 +178,9 @@ class TargetGenerator(ConanFile):
                 stream.write(f"#define {key} {value}\n")
             write_includes(stream, self.target.get('GlobalHeaders', []), False)
             write_includes(stream, self.target.get('PublicIncludes', []), False)
-            write_includes(stream, include_file_paths)
-            write_includes(stream, inline_include_file_paths)
+            if precompile_local_haders:
+                write_includes(stream, include_file_paths)
+                write_includes(stream, inline_include_file_paths)
         self.save_file(package_header_file_name, stream.getvalue())
 
         stream = io.StringIO()
@@ -187,8 +190,9 @@ class TargetGenerator(ConanFile):
                 stream.write(f"#define {key} {value}\n")
             write_includes(stream, self.target.get('PrivateIncludes', []), False)
             write_include(stream, package_header_file_name, False)
-            write_includes(stream, private_include_file_paths)
-            write_includes(stream, private_inline_include_file_paths)
+            if precompile_local_haders:
+                write_includes(stream, private_include_file_paths)
+                write_includes(stream, private_inline_include_file_paths)
         self.save_file(precompiled_header_file_name, stream.getvalue())
 
         cmake_sources = ' '.join(source_file_paths)
