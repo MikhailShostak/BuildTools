@@ -18,6 +18,17 @@ class TargetGenerator(ConanFile):
     options = { "shared" : [True, False] }
     default_options = { "shared": True }
 
+    def __init__(self, arg):
+        super().__init__(arg)
+        
+        with open(os.path.join(script_folder, 'build_info.yaml'), 'r') as f:
+            build_info = yaml.load(f, Loader=yaml.FullLoader)
+
+        self.project_path = build_info['Project']
+        self.target_name = build_info['Target']
+
+        self.project_base_dir = PureWindowsPath(os.path.normpath(os.path.dirname(self.project_path))).as_posix()
+
     @property
     def target(self):
         if self._target:
@@ -60,33 +71,42 @@ class TargetGenerator(ConanFile):
         print(f'{path}: {file_hash} -> {content_hash}')
         if file_hash != content_hash:
             tools.files.save(self, path, content)
+
     def configure(self):
-        self.options["*"].shared = self.options.shared
+        dependencies = self.target.get('LocalDependencies', []) + self.target.get('PublicDependencies', []) + self.target.get('PrivateDependencies', [])
+        print('Configure', dependencies)
+
+        for dependency in dependencies:
+            if isinstance(dependency, dict):
+                package_name = dependency['Name'] 
+                package_static = bool(dependency.get('Static', False))
+            else:
+                package_name = dependency
+                package_static = False
+            
+            package_name = package_name.split('/')[0]
+            print('{}={}'.format(package_name, 'static' if package_static else 'shared'))
+            self.options[package_name].shared = not package_static
 
     def requirements(self):
-        with open(os.path.join(script_folder, 'build_info.yaml'), 'r') as f:
-            build_info = yaml.load(f, Loader=yaml.FullLoader)
-
-        self.project_path = build_info['Project']
-        self.target_name = build_info['Target']
-
-        self.project_base_dir = PureWindowsPath(os.path.normpath(os.path.dirname(self.project_path))).as_posix()
-
         for dependency in self.target.get('LocalDependencies', []):
             package = dependency.split(' as ')[0].strip()
             #self.requires(package.replace('/', '-') + '/' + self.target.get('PackageVersion', self.project_version), transitive_headers=True, transitive_libs=True)
             self.requires(os.path.basename(package) + '/' + self.target.get('PackageVersion', self.project_version), transitive_headers=True, transitive_libs=True)
 
         for dependency in self.target.get('PublicDependencies', []):
-            package = dependency.split(' as ')[0].strip()
+            name = dependency['Name'] if isinstance(dependency, dict) else dependency
+            package = name.split(' as ')[0].strip()
             self.requires(package, transitive_headers=True, transitive_libs=True)
 
         for dependency in self.target.get('PrivateDependencies', []):
-            package = dependency.split(' as ')[0].strip()
+            name = dependency['Name'] if isinstance(dependency, dict) else dependency
+            package = name.split(' as ')[0].strip()
             self.requires(package, transitive_headers=False, transitive_libs=False)
 
         for dependency in self.target.get('PrivateDependencyOverrides', []):
-            package = dependency
+            name = dependency['Name'] if isinstance(dependency, dict) else dependency
+            package = name
             self.requires(package, transitive_headers=False, transitive_libs=False, override=True)
 
     def generate(self):
