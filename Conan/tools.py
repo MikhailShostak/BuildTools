@@ -22,7 +22,7 @@ class ProjectTools:
         self.configuration = args.Configuration
         self.target = args.Target
 
-        self.build_dir = os.path.join(self.project_dir, 'Build', self.configuration, self.target)
+        self.build_dir = os.path.join(self.project_dir, '.Build', self.configuration, self.target)
 
         if args.Command == "Generate":
             self.generator = args.Generator
@@ -123,9 +123,9 @@ class ProjectTools:
                 "type": "cppvsdbg",
                 "request": "launch",
                 "preLaunchTask": f"B: {target_name}",
-                "program": '${workspaceFolder}' + f"/Build/{self.configuration}/{target_name}/{os.path.basename(target_name)}.exe",
-                "envFile": '${workspaceFolder}' + f"/Build/{self.configuration}/{target_name}/conanrun.env",
-                "symbolSearchPath": '${workspaceFolder}' + f"/Build/{self.configuration}/{target_name}",
+                "program": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}/{os.path.basename(target_name)}.exe",
+                "envFile": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}/conanrun.env",
+                "symbolSearchPath": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}",
                 "externalConsole": False,
                 "logging": {
                     "moduleLoad": False,
