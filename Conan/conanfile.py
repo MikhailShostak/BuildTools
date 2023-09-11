@@ -115,7 +115,7 @@ class TargetGenerator(ConanFile):
                         cmake_link_packages.append(cmake_target)
 
         cmake_target_name = os.path.basename(self.target_name)
-        version = self.target.get('PackageVersion', "1.0.0")
+        version = self.target.get('PackageVersion', self.project_version)
 
         cmake_content = [
             'cmake_minimum_required(VERSION 3.5)',
