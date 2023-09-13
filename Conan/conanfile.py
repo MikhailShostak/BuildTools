@@ -58,7 +58,7 @@ class TargetGenerator(ConanFile):
         return os.path.join(self.project_base_dir, self.target_name)
 
     def collect_file_paths(self, folder, extension):
-        paths = glob.glob(f'{self.target_dir}/{folder}/**/*.{extension}', recursive=True)
+        paths = glob.glob(f'{self.target_dir}/{folder}/**/.*.{extension}', recursive=True) + glob.glob(f'{self.target_dir}/{folder}/**/*.{extension}', recursive=True)
         return [PureWindowsPath((os.path.normpath(path))).as_posix() for path in paths]
 
     def get_all_subfolder_paths(self, folder):
