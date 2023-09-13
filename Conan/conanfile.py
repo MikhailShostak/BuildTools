@@ -40,12 +40,20 @@ class TargetGenerator(ConanFile):
         with open(self.project_path, 'r') as f:
             self.project = yaml.load(f, Loader=yaml.FullLoader)
 
-        for target in self.project['Targets']:
-            target_name = target['Name']
-            if self.target_name.endswith(target_name):
-                self._target = target
-                self.target_name = target_name
+            target_path = os.path.join(os.path.dirname(self.project_path), self.target_name, self.target_name + '.target')
+            if os.path.exists(target_path):
+                print('Loading Target:', target_path)
+                with open(target_path, 'r') as target_file:
+                    self._target = yaml.load(target_file, Loader=yaml.FullLoader)
+                print(self._target)
                 return self._target
+            else:
+                for target in self.project.get('Targets', []):
+                    target_name = target['Name']
+                    if self.target_name.endswith(target_name):
+                        self._target = target
+                        self.target_name = target_name
+                        return self._target
 
         raise RuntimeError(f'Target \"{self.target_name}\" not found.')
 

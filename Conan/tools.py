@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import glob
 
 from pathlib import PureWindowsPath
 
@@ -52,7 +53,7 @@ class ProjectTools:
         if 'tasks' not in data:
             data['tasks'] = []
 
-        for target in project['Targets']:
+        for target in self.targets:
             target_name = target['Name']
             target_short_name = os.path.basename(target_name)
 
@@ -103,7 +104,7 @@ class ProjectTools:
         if 'configurations' not in data:
             data['configurations'] = []
 
-        for target in project['Targets']:
+        for target in self.targets:
             target_name = target['Name']
             configuration_name = target_name
             if target.get('Type', 'Application') != 'Application':
@@ -143,6 +144,18 @@ class ProjectTools:
 
         with open(project_path, 'r') as f:
             project = yaml.load(f, Loader=yaml.FullLoader)
+
+            self.targets = project.get('Targets', [])
+
+            target_files = glob.glob(os.path.join(self.project_dir, '**/*.target'), recursive=True)
+            for target_path in target_files:
+                with open(target_path, 'r') as f:
+                    target = yaml.load(f, Loader=yaml.FullLoader)
+                    target['Name'] = os.path.basename(os.path.dirname(target_path))
+                    self.targets.append(target)
+            
+            for target in self.targets:
+                print('Target:', target['Name'])
 
             if not os.path.exists(vscode_dir):
                 os.makedirs(vscode_dir)
