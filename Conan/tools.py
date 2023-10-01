@@ -127,7 +127,7 @@ class ProjectTools:
                 "program": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}/{os.path.basename(target_name)}.exe",
                 "envFile": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}/conanrun.env",
                 "symbolSearchPath": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}",
-                "externalConsole": False,
+                "console": "internalConsole",
                 "logging": {
                     "moduleLoad": False,
                     "trace": True
