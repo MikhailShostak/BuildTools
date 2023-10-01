@@ -30,8 +30,10 @@ class ProjectTools:
             os.makedirs(self.build_dir, exist_ok=True)
             
             self.generator = args.Generator
+            self.compile_classes()
             self.generate()
         elif args.Command == "Build":
+            self.compile_classes()
             self.build()
         elif args.Command == "Package":
             self.package()
@@ -192,6 +194,14 @@ class ProjectTools:
         args = ["conan", "install", "conanfile.py", f"--settings=build_type={self.configuration}", "--build=missing"]
         if self.generator:
             args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
+        print(*args)
+        subprocess.run(args, check=True)
+
+    def compile_classes(self):
+        print("Compile classes...")
+
+        os.chdir(self.build_dir)
+        args = [os.path.join(script_folder, '..', 'ClassGen.bat'), os.path.join(self.project_dir, self.target)]
         print(*args)
         subprocess.run(args, check=True)
 
