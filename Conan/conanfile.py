@@ -81,41 +81,47 @@ class TargetGenerator(ConanFile):
             tools.files.save(self, path, content)
 
     def configure(self):
-        dependencies = self.target.get('LocalDependencies', []) + self.target.get('PublicDependencies', []) + self.target.get('PrivateDependencies', [])
+        dependencies = self.target.get('PublicDependencies', []) + self.target.get('PrivateDependencies', [])
         print('Configure', dependencies)
 
-        for dependency in dependencies:
-            if isinstance(dependency, dict):
-                package_name = dependency['Name'] 
-                package_static = bool(dependency.get('Static', False))
-            else:
-                package_name = dependency
-                package_static = False
-            
-            package_name = package_name.split('/')[0]
-            print('{}={}'.format(package_name, 'static' if package_static else 'shared'))
-            self.options[package_name].shared = not package_static
+        if self.target.get('StaticLinkage', False):
+            self.options['*'].shared = False
+        else:
+            for dependency in dependencies:
+                if isinstance(dependency, dict):
+                    package_name = dependency['Name']
+                    package_static = bool(dependency.get('Static', False))
+                else:
+                    package_name = dependency
+                    package_static = False
+                
+                package_name = package_name.split('/')[0]
+                print('{}={}'.format(package_name, 'static' if package_static else 'shared'))
+                self.options[package_name].shared = not package_static
+
+    def add_dependency(self, dependency, **kwargs):
+        dependency_name = dependency['Name'].split('/')
+        package_name = dependency_name[0]
+        package_version = dependency_name[1] if len(dependency_name) > 1 else None
+
+        if not package_version:
+            package_version = self.target.get('PackageVersion', self.project_version)
+
+        self.requires(package_name + '/' + package_version, **kwargs)
+
 
     def requirements(self):
         for dependency in self.target.get('LocalDependencies', []):
-            package = dependency.split(' as ')[0].strip()
-            #self.requires(package.replace('/', '-') + '/' + self.target.get('PackageVersion', self.project_version), transitive_headers=True, transitive_libs=True)
-            self.requires(os.path.basename(package) + '/' + self.target.get('PackageVersion', self.project_version), transitive_headers=True, transitive_libs=True)
+            self.add_dependency(dependency, transitive_headers=True, transitive_libs=True)
 
         for dependency in self.target.get('PublicDependencies', []):
-            name = dependency['Name'] if isinstance(dependency, dict) else dependency
-            package = name.split(' as ')[0].strip()
-            self.requires(package, transitive_headers=True, transitive_libs=True)
+            self.add_dependency(dependency, transitive_headers=True, transitive_libs=True)
 
         for dependency in self.target.get('PrivateDependencies', []):
-            name = dependency['Name'] if isinstance(dependency, dict) else dependency
-            package = name.split(' as ')[0].strip()
-            self.requires(package, transitive_headers=False, transitive_libs=False)
+            self.add_dependency(dependency, transitive_headers=False, transitive_libs=False)
 
         for dependency in self.target.get('PrivateDependencyOverrides', []):
-            name = dependency['Name'] if isinstance(dependency, dict) else dependency
-            package = name
-            self.requires(package, transitive_headers=False, transitive_libs=False, override=True)
+            self.add_dependency(dependency, transitive_headers=False, transitive_libs=False, override=True)
 
     def generate(self):
         cmake_project_path = os.path.join(str(self.folders.build_folder), 'CMakeLists.txt')
