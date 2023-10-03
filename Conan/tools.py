@@ -26,6 +26,9 @@ class ProjectTools:
         self.build_dir = os.path.join(self.project_dir, '.Build', self.configuration, self.target)
 
         if args.Command == "Generate":
+            print(f"Create build directory: {self.build_dir}")
+            os.makedirs(self.build_dir, exist_ok=True)
+            
             self.generator = args.Generator
             self.generate()
         elif args.Command == "Build":
@@ -175,9 +178,6 @@ class ProjectTools:
             "Target": self.target,
             "Configuration": self.configuration,
         }
-
-        print(f"Create build directory: {self.build_dir}")
-        os.makedirs(self.build_dir, exist_ok=True)
 
         with open(build_info_path, "w") as f:
             yaml.dump(build_info_data, f)
