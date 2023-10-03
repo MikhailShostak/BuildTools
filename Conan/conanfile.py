@@ -151,14 +151,6 @@ class TargetGenerator(ConanFile):
         cmake_target_name = os.path.basename(self.target_name)
         version = self.target.get('PackageVersion', self.project_version)
 
-        cmake_content = [
-            'cmake_minimum_required(VERSION 3.5)',
-            f'project({cmake_target_name} VERSION {version})',
-        ]
-
-        if cmake_find_packages:
-            cmake_content.extend(cmake_find_packages)
-
         source_base_dir = f'Source'
         include_base_dir = f'Include'
         print("Source Base Dir:", source_base_dir)
@@ -167,6 +159,12 @@ class TargetGenerator(ConanFile):
         source_file_paths = []
         for e in ['cpp']:
             source_file_paths.extend(self.collect_file_paths(source_base_dir, e) + self.collect_file_paths(include_base_dir, e))
+
+        public_module_source_file_paths = []
+        private_module_source_file_paths = []
+        for e in ['ixx']:
+            public_module_source_file_paths.extend(self.collect_file_paths(include_base_dir, e))
+            private_module_source_file_paths.extend(self.collect_file_paths(source_base_dir, e))
 
         private_include_file_paths = []
         for e in ['hpp', 'h']:
@@ -183,6 +181,8 @@ class TargetGenerator(ConanFile):
             inline_include_file_paths.extend(self.collect_file_paths(include_base_dir, e))
 
         precompile_local_haders = self.target.get('PrecompileLocalHeaders', False)
+        precompile_public_haders = self.target.get('PrecompilePublicHeaders', precompile_local_haders)
+        precompile_private_haders = self.target.get('PrecompilePrivateHeaders', precompile_local_haders)
 
         package_header_file_name = f'{cmake_target_name}.hpp'
         package_header_file_path = os.path.join(script_folder, package_header_file_name)
@@ -206,15 +206,12 @@ class TargetGenerator(ConanFile):
         stream = io.StringIO()
         with open(package_header_file_name, 'w') as f:
             stream.write('#pragma once\n\n')
-            for key, value in self.target.get('GlobalDefines', {}).items():
-                stream.write(f"#define {key} {value}\n")
             for key, value in self.target.get('PublicDefines', {}).items():
                 stream.write(f"#define {key} {value}\n")
-            write_includes(stream, self.target.get('GlobalHeaders', []), False)
             write_includes(stream, self.target.get('PublicIncludes', []), False)
-            if precompile_local_haders:
-                write_includes(stream, include_file_paths)
-                write_includes(stream, inline_include_file_paths)
+            
+            write_includes(stream, include_file_paths)
+            write_includes(stream, inline_include_file_paths)
         self.save_file(package_header_file_name, stream.getvalue())
 
         stream = io.StringIO()
@@ -222,19 +219,64 @@ class TargetGenerator(ConanFile):
             stream.write('#pragma once\n\n')
             for key, value in self.target.get('PrivateDefines', {}).items():
                 stream.write(f"#define {key} {value}\n")
+            if not precompile_public_haders:
+                for key, value in self.target.get('PublicDefines', {}).items():
+                    stream.write(f"#define {key} {value}\n")
+            
             write_includes(stream, self.target.get('PrivateIncludes', []), False)
-            write_include(stream, package_header_file_name, False)
-            if precompile_local_haders:
+
+            if precompile_public_haders:
+                write_include(stream, package_header_file_name, False)
+            else:
+                write_includes(stream, self.target.get('PublicIncludes', []), False)
+            
+            if precompile_private_haders:
                 write_includes(stream, private_include_file_paths)
                 write_includes(stream, private_inline_include_file_paths)
         self.save_file(precompiled_header_file_name, stream.getvalue())
+
+        cmake_content = [
+            'cmake_minimum_required(VERSION 3.26)',
+            f'project({cmake_target_name} VERSION {version})',
+        ]
+
+        if private_module_source_file_paths or public_module_source_file_paths:
+            cmake_content.extend([
+                'if(${CMAKE_VERSION} VERSION_LESS "3.27.0")',
+                '    set(CMAKE_EXPERIMENTAL_CXX_MODULE_CMAKE_API "2182bf5c-ef0d-489a-91da-49dbc3090d2a")',
+                'else()',
+                '    set(CMAKE_EXPERIMENTAL_CXX_MODULE_CMAKE_API "aa1f7df0-828a-4fcd-9afc-2dc80491aca7")',
+                'endif()',
+                'set(CMAKE_EXPERIMENTAL_CXX_MODULE_DYNDEP 1)',
+                'set(CMAKE_CXX_EXTENSIONS OFF)',
+            ])
+
+        if cmake_find_packages:
+            cmake_content.extend(cmake_find_packages)
 
         cmake_sources = ' '.join(source_file_paths)
         target_type = self.target.get('Type', 'Application')
         interface = False
         if target_type == 'Application':
             cmake_content.append(f'add_executable({cmake_target_name} {cmake_sources})')
-        elif target_type == 'Library' or target_type == 'SharedLibrary' or target_type == 'StaticLibrary' or target_type == 'Plugin':
+
+            def write_modules(access, paths):
+                if not paths:
+                    return
+
+                cmake_module_dirs = []
+                for path in paths:
+                    dir = os.path.dirname(path)
+                    if dir not in cmake_module_dirs:
+                        cmake_module_dirs.append(dir)
+                cmake_module_dirs = 'BASE_DIRS ' + ' '.join(cmake_module_dirs) if len(cmake_module_dirs) else ''
+
+                cmake_module_sources = 'FILES ' + ' '.join(paths)
+                cmake_content.append(f'target_sources({cmake_target_name} {access} FILE_SET cxx_modules TYPE CXX_MODULES {cmake_module_dirs} {cmake_module_sources})')
+
+            write_modules('PUBLIC', public_module_source_file_paths)
+            write_modules('PRIVATE', private_module_source_file_paths)
+        elif target_type == 'Library' or target_type == 'Plugin':
             cmake_content.append(f'add_library({cmake_target_name} {cmake_sources})')
         elif target_type == 'Interface':
             interface = True
@@ -244,7 +286,8 @@ class TargetGenerator(ConanFile):
 
         if not interface:
             cmake_content.append(f'target_compile_definitions({cmake_target_name} PRIVATE -D_WIN32_WINNT=0x0601)')
-            cmake_content.append(f'target_precompile_headers({cmake_target_name} PRIVATE {precompiled_header_file_name})')
+            if not public_module_source_file_paths and not private_module_source_file_paths:
+                cmake_content.append(f'target_precompile_headers({cmake_target_name} PRIVATE {precompiled_header_file_name})')
 
         if cmake_link_packages:
             packages = ' '.join(cmake_link_packages)
@@ -260,7 +303,7 @@ class TargetGenerator(ConanFile):
             source_dir = PureWindowsPath((os.path.normpath(source_dir))).as_posix()
             cmake_content.append(f'target_include_directories({cmake_target_name} PRIVATE {source_dir})')
 
-        cmake_content.append(f'set_target_properties({cmake_target_name} PROPERTIES\n\tCXX_STANDARD 17\n\tCXX_STANDARD_REQUIRED YES\n\tCXX_EXTENSIONS NO\n)')
+        cmake_content.append(f'set_target_properties({cmake_target_name} PROPERTIES\n\tCXX_STANDARD 20\n\tCXX_STANDARD_REQUIRED YES\n\tCXX_EXTENSIONS NO\n)')
         cmake_content.append('set(CMAKE_VERBOSE_MAKEFILE ON)')
 
         cmake_content = '\n'.join(cmake_content)
