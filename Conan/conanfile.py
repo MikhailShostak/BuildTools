@@ -74,7 +74,7 @@ class TargetGenerator(ConanFile):
 
     def save_file(self, path, content):
         content_hash = hashlib.sha256(content.encode()).hexdigest()
-        file_hash = hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.isfile(path) else None
+        file_hash = hashlib.sha256(tools.files.load(self, path).encode()).hexdigest() if os.path.isfile(path) else None
 
         print(f'{path}: {file_hash} -> {content_hash}')
         if file_hash != content_hash:
@@ -204,35 +204,33 @@ class TargetGenerator(ConanFile):
             stream.write('\n')
 
         stream = io.StringIO()
-        with open(package_header_file_name, 'w') as f:
-            stream.write('#pragma once\n\n')
-            for key, value in self.target.get('PublicDefines', {}).items():
-                stream.write(f"#define {key} {value}\n")
-            write_includes(stream, self.target.get('PublicIncludes', []), False)
-            
-            write_includes(stream, include_file_paths)
-            write_includes(stream, inline_include_file_paths)
+        stream.write('#pragma once\n\n')
+        for key, value in self.target.get('PublicDefines', {}).items():
+            stream.write(f"#define {key} {value}\n")
+        write_includes(stream, self.target.get('PublicIncludes', []), False)
+        
+        write_includes(stream, include_file_paths)
+        write_includes(stream, inline_include_file_paths)
         self.save_file(package_header_file_name, stream.getvalue())
 
         stream = io.StringIO()
-        with open(precompiled_header_file_name, 'w') as f:
-            stream.write('#pragma once\n\n')
-            for key, value in self.target.get('PrivateDefines', {}).items():
+        stream.write('#pragma once\n\n')
+        for key, value in self.target.get('PrivateDefines', {}).items():
+            stream.write(f"#define {key} {value}\n")
+        if not precompile_public_haders:
+            for key, value in self.target.get('PublicDefines', {}).items():
                 stream.write(f"#define {key} {value}\n")
-            if not precompile_public_haders:
-                for key, value in self.target.get('PublicDefines', {}).items():
-                    stream.write(f"#define {key} {value}\n")
-            
-            write_includes(stream, self.target.get('PrivateIncludes', []), False)
+        
+        write_includes(stream, self.target.get('PrivateIncludes', []), False)
 
-            if precompile_public_haders:
-                write_include(stream, package_header_file_name, False)
-            else:
-                write_includes(stream, self.target.get('PublicIncludes', []), False)
-            
-            if precompile_private_haders:
-                write_includes(stream, private_include_file_paths)
-                write_includes(stream, private_inline_include_file_paths)
+        if precompile_public_haders:
+            write_include(stream, package_header_file_name, False)
+        else:
+            write_includes(stream, self.target.get('PublicIncludes', []), False)
+        
+        if precompile_private_haders:
+            write_includes(stream, private_include_file_paths)
+            write_includes(stream, private_inline_include_file_paths)
         self.save_file(precompiled_header_file_name, stream.getvalue())
 
         cmake_content = [
