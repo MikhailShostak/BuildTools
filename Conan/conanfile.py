@@ -73,6 +73,9 @@ class TargetGenerator(ConanFile):
         return [name for name in glob.glob(f'{self.target_dir}/{folder}/**/*/', recursive=True) if os.path.isdir(name)]
 
     def save_file(self, path, content):
+        path = os.path.join(script_folder, path)
+        print('Write:', path)
+        
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         file_hash = hashlib.sha256(tools.files.load(self, path).encode()).hexdigest() if os.path.isfile(path) else None
 
@@ -123,8 +126,14 @@ class TargetGenerator(ConanFile):
         for dependency in self.target.get('PrivateDependencyOverrides', []):
             self.add_dependency(dependency, transitive_headers=False, transitive_libs=False, override=True)
 
+    def layout(self):
+        self.folders.build = os.path.join('..', str(self.settings.build_type))
+
+    def get_cmake_project_dir(self):
+        return script_folder
+
     def generate(self):
-        cmake_project_path = os.path.join(str(self.folders.build_folder), 'CMakeLists.txt')
+        cmake_project_path = 'CMakeLists.txt'
         self.output.info(f'Generate {cmake_project_path}')
 
         cmake_find_packages = []
@@ -292,12 +301,12 @@ class TargetGenerator(ConanFile):
             access_keyword = public_keyword
             cmake_content.append(f'target_link_libraries({cmake_target_name} {access_keyword} {packages})')
 
-        include_dir = os.path.relpath(os.path.join(self.target_dir, "Include"), start=script_folder)
+        include_dir = os.path.relpath(os.path.join(self.target_dir, "Include"), start=self.get_cmake_project_dir())
         include_dir = PureWindowsPath((os.path.normpath(include_dir))).as_posix()
         cmake_content.append(f'target_include_directories({cmake_target_name} {public_keyword} . {include_dir})')
 
         if not interface:
-            source_dir = os.path.relpath(os.path.join(self.target_dir, "Source"), start=script_folder)
+            source_dir = os.path.relpath(os.path.join(self.target_dir, "Source"), start=self.get_cmake_project_dir())
             source_dir = PureWindowsPath((os.path.normpath(source_dir))).as_posix()
             cmake_content.append(f'target_include_directories({cmake_target_name} PRIVATE {source_dir})')
 
@@ -311,7 +320,7 @@ class TargetGenerator(ConanFile):
         self.save_file(cmake_project_path, cmake_content)
 
         cmake = CMake(self)
-        cmake.configure(build_script_folder=self.folders.build_folder)
+        cmake.configure(build_script_folder=self.get_cmake_project_dir())
 
         bat_files = glob.glob("conanrunenv-*.bat")
 
@@ -325,21 +334,21 @@ class TargetGenerator(ConanFile):
                     path_line = line.strip()[5:-2]
                     break
 
-            with open("conanrun.env", "w") as f:
+            with open(os.path.join('..', str(self.settings.build_type), "conanrun.env"), "w") as f:
                 f.write(path_line)
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(build_script_folder=self.folders.build_folder)
+        cmake.configure(build_script_folder=self.get_cmake_project_dir())
         cmake.build()
 
     def package_info(self):
         self.cpp_info.includedirs = ['.', os.path.relpath(os.path.join(self.target_dir, 'Include'), start=script_folder)]
 
         target_type = self.target['Type']
-        if target_type == 'Library' or target_type == 'StaticLibrary' or target_type == 'SharedLibrary' or target_type == 'Plugin':
-            self.cpp_info.bindirs = ['.']
-            self.cpp_info.libdirs = ['.']
+        if target_type == 'Library' or target_type == 'Plugin':
+            self.cpp_info.bindirs = [os.path.join('..', str(self.settings.build_type))]
+            self.cpp_info.libdirs = [os.path.join('..', str(self.settings.build_type))]
             self.cpp_info.libs = [os.path.basename(self.target_name)]
 
         #libs = tools.files.collect_libs(self)

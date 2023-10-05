@@ -23,11 +23,14 @@ class ProjectTools:
         self.configuration = args.Configuration
         self.target = args.Target
 
-        self.build_dir = os.path.join(self.project_dir, '.Build', self.configuration, self.target)
+        self.build_dir = os.path.join(self.project_dir, '.Build', self.target)
+        self.package_dir = os.path.join(self.build_dir, 'Package')
+        self.configuration_dir = os.path.join(self.build_dir, self.configuration)
 
         if args.Command == "Generate":
-            print(f"Create build directory: {self.build_dir}")
-            os.makedirs(self.build_dir, exist_ok=True)
+            print(f"Create build directory: {self.configuration_dir}")
+            os.makedirs(self.package_dir, exist_ok=True)
+            os.makedirs(self.configuration_dir, exist_ok=True)
             
             self.generator = args.Generator
             self.compile_classes()
@@ -129,9 +132,9 @@ class ProjectTools:
                 "type": "cppvsdbg",
                 "request": "launch",
                 "preLaunchTask": f"B: {target_name}",
-                "program": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}/{os.path.basename(target_name)}.exe",
-                "envFile": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}/conanrun.env",
-                "symbolSearchPath": '${workspaceFolder}' + f"/.Build/{self.configuration}/{target_name}",
+                "program": '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}/{os.path.basename(target_name)}.exe",
+                "envFile": '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}/conanrun.env",
+                "symbolSearchPath": '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}",
                 "console": "internalConsole",
                 "logging": {
                     "moduleLoad": False,
@@ -148,9 +151,9 @@ class ProjectTools:
         vscode_dir = os.path.join(os.path.dirname(project_path), '.vscode')
 
         with open(project_path, 'r') as f:
-            project = yaml.load(f, Loader=yaml.FullLoader)
+            self.project = yaml.load(f, Loader=yaml.FullLoader)
 
-            self.targets = project.get('Targets', [])
+            self.targets = self.project.get('Targets', [])
 
             target_files = glob.glob(os.path.join(self.project_dir, '**/*.target'), recursive=True)
             for target_path in target_files:
@@ -165,8 +168,8 @@ class ProjectTools:
             if not os.path.exists(vscode_dir):
                 os.makedirs(vscode_dir)
             
-            self.generate_vscode_tasks(project, os.path.join(vscode_dir, 'tasks.json'))
-            self.generate_vscode_configurations(project, os.path.join(vscode_dir, 'launch.json'))
+            self.generate_vscode_tasks(self.project, os.path.join(vscode_dir, 'tasks.json'))
+            self.generate_vscode_configurations(self.project, os.path.join(vscode_dir, 'launch.json'))
 
     def generate(self):
         print("Generating...")
@@ -174,24 +177,27 @@ class ProjectTools:
         self.generate_vscode_project(self.project_path)
 
         build_info_name = 'build_info.yaml'
-        build_info_path = os.path.join(self.build_dir, build_info_name)
+        build_info_path = os.path.join(self.package_dir, build_info_name)
         build_info_data = {
             "Project": self.project_path,
             "Target": self.target,
-            "Configuration": self.configuration,
         }
 
         with open(build_info_path, "w") as f:
             yaml.dump(build_info_data, f)
 
         src_conanfile = os.path.join(script_folder, 'conanfile.py')
-        dst_conanfile = os.path.join(self.build_dir, 'conanfile.py')
+        dst_conanfile = os.path.join(self.package_dir, 'conanfile.py')
 
         print(f"Copy: {src_conanfile} to {dst_conanfile}")
         shutil.copy(src_conanfile, dst_conanfile)
+        
+        args = ['conan', 'editable', 'add', dst_conanfile, '--name', self.target, '--version', self.project['Version']]
+        print(*args)
+        subprocess.run(args, check=True)
 
         os.chdir(self.build_dir)
-        args = ["conan", "install", "conanfile.py", f"--settings=build_type={self.configuration}", "--build=missing"]
+        args = ["conan", "install", dst_conanfile, f"--settings=build_type={self.configuration}", "--build=missing"]
         if self.generator:
             args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
         print(*args)
@@ -200,7 +206,7 @@ class ProjectTools:
     def compile_classes(self):
         print("Compile classes...")
 
-        os.chdir(self.build_dir)
+        os.chdir(self.configuration_dir)
         args = [os.path.join(script_folder, '..', 'ClassGen.bat'), os.path.join(self.project_dir, self.target)]
         print(*args)
         subprocess.run(args, check=True)
@@ -208,8 +214,8 @@ class ProjectTools:
     def build(self):
         print("Building...")
 
-        os.chdir(self.build_dir)
-        args = ["cmake", "--build", self.build_dir, f'--config={self.configuration}']
+        os.chdir(self.configuration_dir)
+        args = ["cmake", "--build", self.configuration_dir, f'--config={self.configuration}']
         print(*args)
         subprocess.run(args, check=True)
 
