@@ -309,6 +309,7 @@ class TargetGenerator(ConanFile):
             source_dir = os.path.relpath(os.path.join(self.target_dir, "Source"), start=self.get_cmake_project_dir())
             source_dir = PureWindowsPath((os.path.normpath(source_dir))).as_posix()
             cmake_content.append(f'target_include_directories({cmake_target_name} PRIVATE {source_dir})')
+            cmake_content.append(f'if (MSVC)\n\ttarget_compile_options({cmake_target_name} PRIVATE /bigobj)\nendif ()\n')
 
         cmake_content.append(f'set_target_properties({cmake_target_name} PROPERTIES\n\tCXX_STANDARD 20\n\tCXX_STANDARD_REQUIRED YES\n\tCXX_EXTENSIONS NO\n)')
         cmake_content.append('set(CMAKE_VERBOSE_MAKEFILE ON)')
