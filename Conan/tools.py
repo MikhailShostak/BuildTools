@@ -128,13 +128,16 @@ class ProjectTools:
                 data['configurations'].append({'name': configuration_name})
                 configuration = data['configurations'][-1]
 
+            vscode_program_folder = '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}"
+
             configuration.update({
                 "type": "cppvsdbg",
                 "request": "launch",
                 "preLaunchTask": f"B: {target_name}",
-                "program": '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}/{os.path.basename(target_name)}.exe",
-                "envFile": '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}/conanrun.env",
-                "symbolSearchPath": '${workspaceFolder}' + f"/.Build/{target_name}/{self.configuration}",
+                "program": f"{vscode_program_folder}/{os.path.basename(target_name)}.exe",
+                "envFile": f"{vscode_program_folder}/conanrun.env",
+                "cwd": vscode_program_folder,
+                "symbolSearchPath": vscode_program_folder,
                 "console": "internalConsole",
                 "logging": {
                     "moduleLoad": False,
