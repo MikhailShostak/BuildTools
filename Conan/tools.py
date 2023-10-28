@@ -22,6 +22,7 @@ class ProjectTools:
 
         self.configuration = args.Configuration
         self.target = args.Target
+        self.target_dir = os.path.join(self.project_dir, self.target)
 
         self.build_dir = os.path.join(self.project_dir, '.Build', self.target)
         self.package_dir = os.path.join(self.build_dir, 'Package')
@@ -37,6 +38,7 @@ class ProjectTools:
             self.generate()
         elif args.Command == "Build":
             self.compile_classes()
+            self.copy_assets()
             self.build()
         elif args.Command == "Package":
             self.package()
@@ -210,9 +212,54 @@ class ProjectTools:
         print("Compile classes...")
 
         os.chdir(self.configuration_dir)
-        args = [os.path.join(script_folder, '..', 'ClassGen.bat'), os.path.join(self.project_dir, self.target)]
+        args = [os.path.join(script_folder, '..', 'ClassGen.bat'), self.target_dir]
         print(*args)
         subprocess.run(args, check=True)
+
+    def copy_assets(self):
+        print("Copying Assets...")
+
+        asset_source_dir = os.path.join(self.target_dir, 'Assets')
+        asset_dest_dir = self.configuration_dir
+        asset_list_file_path = os.path.join(self.configuration_dir, '.assets.txt')
+
+        new_asset_list = []
+
+        # Recursively iterate over the project directory
+        for subdir, _, files in os.walk(asset_source_dir):
+            for file in files:
+                source_file_path = os.path.join(subdir, file)
+                relative_path = os.path.relpath(source_file_path, asset_source_dir)
+                dest_file_path = os.path.join(asset_dest_dir, relative_path)
+
+                # Add to the new asset list
+                new_asset_list.append(dest_file_path)
+
+                # Create directories in the destination if they don't exist
+                os.makedirs(os.path.dirname(dest_file_path), exist_ok=True)
+
+                # If the destination file doesn't exist or is older, copy the source file
+                if not os.path.exists(dest_file_path) or os.path.getmtime(source_file_path) > os.path.getmtime(dest_file_path):
+                    shutil.copy2(source_file_path, dest_file_path)
+                    print(f'Copy: {source_file_path} -> {dest_file_path}')
+
+        # Load existing asset list from the file
+        existing_asset_list = []
+        if os.path.exists(asset_list_file_path):
+            with open(asset_list_file_path, 'r') as file:
+                existing_asset_list = file.read().splitlines()
+        
+        # Remove assets in the destination directory that don't exist in the source directory
+        for asset_path in existing_asset_list:
+            if asset_path not in new_asset_list and os.path.exists(asset_path):
+                print(f'Remove: {asset_path}')
+                os.remove(asset_path)
+        
+        # Update the asset list file with the new list
+        with open(asset_list_file_path, 'w') as file:
+            for asset_path in new_asset_list:
+                file.write(asset_path + '\n')
+
 
     def build(self):
         print("Building...")
