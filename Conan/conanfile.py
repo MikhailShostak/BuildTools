@@ -1,4 +1,5 @@
 from conan import ConanFile, tools
+from conan.tools.files import copy
 from conan.tools.cmake import CMake
 
 import os, yaml, glob, hashlib, argparse, io
@@ -21,11 +22,12 @@ class TargetGenerator(ConanFile):
     def __init__(self, arg):
         super().__init__(arg)
         
-        with open(os.path.join(script_folder, 'build_info.yaml'), 'r') as f:
-            build_info = yaml.load(f, Loader=yaml.FullLoader)
+        with open(os.path.join(script_folder, 'package_info.yaml'), 'r') as f:
+            package_info = yaml.load(f, Loader=yaml.FullLoader)
 
-        self.project_path = build_info['Project']
-        self.target_name = build_info['Target']
+        self.project_relpath = package_info['Project']
+        self.project_path = os.path.join(script_folder, package_info['Project'])
+        self.target_name = package_info['Target']
 
         self.project_base_dir = PureWindowsPath(os.path.normpath(os.path.dirname(self.project_path))).as_posix()
 
@@ -62,8 +64,12 @@ class TargetGenerator(ConanFile):
         return self.project.get('Version', '1.0.0')
 
     @property
+    def project_source_dir(self):
+        return PureWindowsPath(os.path.join(self.source_folder, os.path.dirname(self.project_relpath))).as_posix()
+
+    @property
     def target_dir(self):
-        return os.path.join(self.project_base_dir, self.target_name)
+        return PureWindowsPath(os.path.join(self.project_source_dir, self.target_name)).as_posix()
 
     def collect_file_paths(self, folder, extension):
         paths = glob.glob(f'{self.target_dir}/{folder}/**/.*.{extension}', recursive=True) + glob.glob(f'{self.target_dir}/{folder}/**/*.{extension}', recursive=True)
@@ -83,7 +89,28 @@ class TargetGenerator(ConanFile):
         if file_hash != content_hash:
             tools.files.save(self, path, content)
 
+    def export(self):
+        package_info_name = 'package_info.yaml'
+        package_info_path = os.path.join(self.export_folder, package_info_name)
+        package_info_data = {
+            "Project": os.path.basename(self.project_path),
+            "Target": self.target_name,
+        }
+
+        with open(package_info_path, "w") as f:
+            yaml.dump(package_info_data, f)
+
+        copy(self, '*.Project', self.project_base_dir, self.export_folder)
+        copy(self, os.path.join(self.target_name, '*.Target'), self.project_base_dir, self.export_folder)
+
+    def export_sources(self):
+        copy(self, 'CMakeLists.txt', self.recipe_folder, self.export_sources_folder)
+        copy(self, '*.hpp', self.recipe_folder, self.export_sources_folder)
+        copy(self, '*.Project', self.project_base_dir, self.export_sources_folder)
+        copy(self, f'{self.target_name}/**', self.project_base_dir, self.export_sources_folder)
+    
     def configure(self):
+        print('**** CONFIGURE')
         dependencies = self.target.get('PublicDependencies', []) + self.target.get('PrivateDependencies', [])
         print('Configure', dependencies)
 
@@ -110,10 +137,11 @@ class TargetGenerator(ConanFile):
         if not package_version:
             package_version = self.target.get('PackageVersion', self.project_version)
 
-        self.requires(package_name + '/' + package_version, **kwargs)
+        self.requires(package_name.lower() + '/' + package_version, **kwargs)
 
 
     def requirements(self):
+        print('**** REQUIREMENTS')
         for dependency in self.target.get('LocalDependencies', []):
             self.add_dependency(dependency, transitive_headers=True, transitive_libs=True)
 
@@ -127,19 +155,26 @@ class TargetGenerator(ConanFile):
             self.add_dependency(dependency, transitive_headers=False, transitive_libs=False, override=True)
 
     def layout(self):
-        self.folders.build = os.path.join('..', str(self.settings.build_type))
+        self.folders.build = str(self.settings.build_type)
 
     def get_cmake_project_dir(self):
         return script_folder
+    
+    def make_source_path(self, path):
+        return '${PROJECT_SOURCE_ROOT_FOLDER}/' + PureWindowsPath(os.path.relpath(path, start=self.project_base_dir)).as_posix()
+
+    def make_source_paths(self, paths):
+        return [self.make_source_path(path) for path in paths]
 
     def generate(self):
+        print('**** GENERATE')
         cmake_project_path = 'CMakeLists.txt'
         self.output.info(f'Generate {cmake_project_path}')
 
         cmake_find_packages = []
         cmake_link_packages = []
 
-        target_files = glob.glob(f'{script_folder}/*Targets.cmake')
+        target_files = glob.glob(f'{self.source_folder}/*Targets.cmake')
 
         for path in target_files:
             package = os.path.basename(path).split('Targets.cmake')[0]
@@ -165,6 +200,10 @@ class TargetGenerator(ConanFile):
         print("Source Base Dir:", source_base_dir)
         print("Include Base Dir:", include_base_dir)
 
+        print('**** CWD: ', os.getcwd())
+        print('**** SOURCE DIR: ', self.source_folder)
+        print('**** BUILD DIR: ', self.build_folder)
+        print('**** TARGET DIR: ', self.target_dir)
         source_file_paths = []
         for e in ['cpp']:
             source_file_paths.extend(self.collect_file_paths(source_base_dir, e) + self.collect_file_paths(include_base_dir, e))
@@ -245,6 +284,8 @@ class TargetGenerator(ConanFile):
         cmake_content = [
             'cmake_minimum_required(VERSION 3.26)',
             f'project({cmake_target_name} VERSION {version})',
+            'set(PROJECT_SOURCE_ROOT_FOLDER "." CACHE STRING "Project Root")',
+            'message(PROJECT_SOURCE_ROOT_FOLDER="${PROJECT_SOURCE_ROOT_FOLDER}")',
         ]
 
         if private_module_source_file_paths or public_module_source_file_paths:
@@ -261,11 +302,11 @@ class TargetGenerator(ConanFile):
         if cmake_find_packages:
             cmake_content.extend(cmake_find_packages)
 
-        cmake_sources = ' '.join(source_file_paths)
+        cmake_sources = '\n\t'.join(self.make_source_paths(source_file_paths))
         target_type = self.target.get('Type', 'Application')
         interface = False
         if target_type == 'Application':
-            cmake_content.append(f'add_executable({cmake_target_name} {cmake_sources})')
+            cmake_content.append(f'add_executable({cmake_target_name}\n\t{cmake_sources}\n)')
 
             def write_modules(access, paths):
                 if not paths:
@@ -297,22 +338,27 @@ class TargetGenerator(ConanFile):
                 cmake_content.append(f'target_precompile_headers({cmake_target_name} PRIVATE {precompiled_header_file_name})')
 
         if cmake_link_packages:
-            packages = ' '.join(cmake_link_packages)
+            packages = '\n\t'.join(cmake_link_packages)
             access_keyword = public_keyword
-            cmake_content.append(f'target_link_libraries({cmake_target_name} {access_keyword} {packages})')
+            cmake_content.append(f'target_link_libraries({cmake_target_name}\n{access_keyword}\n\t{packages}\n)')
 
-        include_dir = os.path.relpath(os.path.join(self.target_dir, "Include"), start=self.get_cmake_project_dir())
+        include_dir = os.path.join('${PROJECT_SOURCE_ROOT_FOLDER}', self.target_name, "Include")
         include_dir = PureWindowsPath((os.path.normpath(include_dir))).as_posix()
-        cmake_content.append(f'target_include_directories({cmake_target_name} {public_keyword} . {include_dir})')
+        cmake_content.append(f'target_include_directories({cmake_target_name}\n{public_keyword}\n\t.\n\t"{include_dir}"\n)')
 
         if not interface:
-            source_dir = os.path.relpath(os.path.join(self.target_dir, "Source"), start=self.get_cmake_project_dir())
+            source_dir = os.path.join('${PROJECT_SOURCE_ROOT_FOLDER}', self.target_name, "Source")
             source_dir = PureWindowsPath((os.path.normpath(source_dir))).as_posix()
-            cmake_content.append(f'target_include_directories({cmake_target_name} PRIVATE {source_dir})')
+            cmake_content.append(f'target_include_directories({cmake_target_name} PRIVATE "{source_dir}")')
             cmake_content.append(f'if (MSVC)\n\ttarget_compile_options({cmake_target_name} PRIVATE /bigobj)\nendif ()\n')
 
+        cmake_content.append('message(PROJECT_SOURCE_ROOT_FOLDER="${PROJECT_SOURCE_ROOT_FOLDER}")')
+        public_headers = self.make_source_paths(include_file_paths)
+        public_headers = ';'.join(public_headers)
+        cmake_content.append(f'set_target_properties({cmake_target_name} PROPERTIES\n\tPUBLIC_HEADER "{public_headers}"\n)')
         cmake_content.append(f'set_target_properties({cmake_target_name} PROPERTIES\n\tCXX_STANDARD 20\n\tCXX_STANDARD_REQUIRED YES\n\tCXX_EXTENSIONS NO\n)')
         cmake_content.append('set(CMAKE_VERBOSE_MAKEFILE ON)')
+        cmake_content.append(f'install(TARGETS {cmake_target_name})')
 
         cmake_content = '\n'.join(cmake_content)
 
@@ -321,7 +367,8 @@ class TargetGenerator(ConanFile):
         self.save_file(cmake_project_path, cmake_content)
 
         cmake = CMake(self)
-        cmake.configure(build_script_folder=self.get_cmake_project_dir())
+        print('**** CMAKE:', os.getcwd(), self.get_cmake_project_dir(), self.project_base_dir, self.project_source_dir)
+        cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir })
 
         bat_files = glob.glob("conanrunenv-*.bat")
 
@@ -335,28 +382,38 @@ class TargetGenerator(ConanFile):
                     path_line = line.strip()[5:-2]
                     break
 
-            with open(os.path.join('..', str(self.settings.build_type), "conanrun.env"), "w") as f:
+            with open(os.path.join(str(self.settings.build_type), "conanrun.env"), "w") as f:
                 f.write(path_line)
 
     def build(self):
+        print('**** Build:', os.getcwd(), self.get_cmake_project_dir(), self.project_base_dir, self.project_source_dir)
         cmake = CMake(self)
-        cmake.configure(build_script_folder=self.get_cmake_project_dir())
+        cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir })
         cmake.build()
+    
+    def get_package_subfolder(self, subfolder):
+        return os.path.join(self.package_folder, self.target_name, subfolder)
+    
+    def get_binaries_folder(self):
+        return self.get_package_subfolder('Binaries')
+
+    def package(self):
+        print(f'**** PACKAGE: {self.source_folder} -> {self.package_folder}')
+        copy(self, f'**', os.path.join(self.source_folder, self.target_name, 'Assets'), self.get_binaries_folder())
+        copy(self, f'{self.target_name}.hpp', self.source_folder, self.package_folder)
+        copy(self, f'{self.target_name}/Include/**.h', self.source_folder, self.package_folder)
+        copy(self, f'{self.target_name}/Include/**.hpp', self.source_folder, self.package_folder)
+        copy(self, f'{self.target_name}/Include/**.inl', self.source_folder, self.package_folder)
+        
+        copy(self, self.target_name + '.*', os.path.join(self.source_folder, str(self.settings.build_type)), self.get_binaries_folder())
 
     def package_info(self):
-        self.cpp_info.includedirs = ['.', os.path.relpath(os.path.join(self.target_dir, 'Include'), start=script_folder)]
+        print('**** PACKAGE INFO')
+        self.cpp_info.includedirs = ['.', f'{self.target_name}/Include']
 
         target_type = self.target['Type']
         if target_type == 'Library' or target_type == 'Plugin':
-            self.cpp_info.bindirs = [os.path.join('..', str(self.settings.build_type))]
-            self.cpp_info.libdirs = [os.path.join('..', str(self.settings.build_type))]
+            binaries = [self.get_binaries_folder()]
+            self.cpp_info.bindirs = binaries
+            self.cpp_info.libdirs = binaries
             self.cpp_info.libs = [os.path.basename(self.target_name)]
-
-        #libs = tools.files.collect_libs(self)
-        #with open('W:/collected.txt', 'w') as f:
-        #    f.write(script_folder + '\n')
-        #    f.write(os.getcwd() + '\n')
-        #    f.write(str(self.cpp_info.libdirs) + '\n')
-        #    f.write(str(self.cpp_info.libs) + '\n')
-        #    f.write(str(libs) + '\n')
-

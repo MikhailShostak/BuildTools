@@ -20,28 +20,40 @@ class ProjectTools:
         self.project_name = os.path.basename(self.project_dir) + ".project"
         self.project_path = os.path.join(self.project_dir, self.project_name)
 
+        with open(self.project_path, 'r') as f:
+            self.project = yaml.load(f, Loader=yaml.FullLoader)
+
         self.configuration = args.Configuration
         self.target = args.Target
         self.target_dir = os.path.join(self.project_dir, self.target)
 
         self.build_dir = os.path.join(self.project_dir, '.Build', self.target)
-        self.package_dir = os.path.join(self.build_dir, 'Package')
+        self.package_dir = self.build_dir
         self.configuration_dir = os.path.join(self.build_dir, self.configuration)
 
         if args.Command == "Generate":
             print(f"Create build directory: {self.configuration_dir}")
             os.makedirs(self.package_dir, exist_ok=True)
-            os.makedirs(self.configuration_dir, exist_ok=True)
-            
+            os.makedirs(self.configuration_dir, exist_ok=True)            
             self.generator = args.Generator
             self.compile_classes()
             self.generate()
+            self.install_dependencies()
         elif args.Command == "Build":
             self.compile_classes()
             self.copy_assets()
             self.build()
         elif args.Command == "Package":
+            print(f"Create build directory: {self.configuration_dir}")
+            os.makedirs(self.package_dir, exist_ok=True)
+            os.makedirs(self.configuration_dir, exist_ok=True)
+            self.generator = args.Generator
+            self.compile_classes()
+            self.generate()
+            self.install_dependencies()
             self.package()
+            if args.Deploy:
+                self.deploy(args.Deploy)
         else:
             return False
         return True
@@ -155,41 +167,38 @@ class ProjectTools:
     def generate_vscode_project(self, project_path):
         vscode_dir = os.path.join(os.path.dirname(project_path), '.vscode')
 
-        with open(project_path, 'r') as f:
-            self.project = yaml.load(f, Loader=yaml.FullLoader)
+        self.targets = self.project.get('Targets', [])
 
-            self.targets = self.project.get('Targets', [])
+        target_files = glob.glob(os.path.join(self.project_dir, '**/*.target'), recursive=True)
+        for target_path in target_files:
+            with open(target_path, 'r') as f:
+                target = yaml.load(f, Loader=yaml.FullLoader)
+                target['Name'] = os.path.basename(os.path.dirname(target_path))
+                self.targets.append(target)
+        
+        for target in self.targets:
+            print('Target:', target['Name'])
 
-            target_files = glob.glob(os.path.join(self.project_dir, '**/*.target'), recursive=True)
-            for target_path in target_files:
-                with open(target_path, 'r') as f:
-                    target = yaml.load(f, Loader=yaml.FullLoader)
-                    target['Name'] = os.path.basename(os.path.dirname(target_path))
-                    self.targets.append(target)
-            
-            for target in self.targets:
-                print('Target:', target['Name'])
-
-            if not os.path.exists(vscode_dir):
-                os.makedirs(vscode_dir)
-            
-            self.generate_vscode_tasks(self.project, os.path.join(vscode_dir, 'tasks.json'))
-            self.generate_vscode_configurations(self.project, os.path.join(vscode_dir, 'launch.json'))
+        if not os.path.exists(vscode_dir):
+            os.makedirs(vscode_dir)
+        
+        self.generate_vscode_tasks(self.project, os.path.join(vscode_dir, 'tasks.json'))
+        self.generate_vscode_configurations(self.project, os.path.join(vscode_dir, 'launch.json'))
 
     def generate(self):
         print("Generating...")
 
         self.generate_vscode_project(self.project_path)
 
-        build_info_name = 'build_info.yaml'
-        build_info_path = os.path.join(self.package_dir, build_info_name)
-        build_info_data = {
+        package_info_name = 'package_info.yaml'
+        package_info_path = os.path.join(self.package_dir, package_info_name)
+        package_info_data = {
             "Project": self.project_path,
             "Target": self.target,
         }
 
-        with open(build_info_path, "w") as f:
-            yaml.dump(build_info_data, f)
+        with open(package_info_path, "w") as f:
+            yaml.dump(package_info_data, f)
 
         src_conanfile = os.path.join(script_folder, 'conanfile.py')
         dst_conanfile = os.path.join(self.package_dir, 'conanfile.py')
@@ -197,10 +206,12 @@ class ProjectTools:
         print(f"Copy: {src_conanfile} to {dst_conanfile}")
         shutil.copy(src_conanfile, dst_conanfile)
         
-        args = ['conan', 'editable', 'add', dst_conanfile, '--name', self.target, '--version', self.project['Version']]
+        args = ['conan', 'editable', 'add', dst_conanfile, '--name', self.target.lower(), '--version', self.project['Version'], '--user', 'dev']
         print(*args)
         subprocess.run(args, check=True)
 
+    def install_dependencies(self):
+        dst_conanfile = os.path.join(self.package_dir, 'conanfile.py')
         os.chdir(self.build_dir)
         args = ["conan", "install", dst_conanfile, f"--settings=build_type={self.configuration}", "--build=missing"]
         if self.generator:
@@ -271,6 +282,20 @@ class ProjectTools:
 
     def package(self):
         print("Packaging...")
+        args = ["conan", "create", os.path.join(self.package_dir, 'conanfile.py'), '--name', self.target.lower(), '--version', self.project['Version'], f"--settings=build_type={self.configuration}", "--build=missing"]
+        if self.generator:
+            args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
+        print(*args)
+        subprocess.run(args, check=True)
+
+    def deploy(self, remote):
+        print("Deploying...")
+        name = self.target.lower()
+        version = self.project['Version']
+        args = ["conan", "upload", f'{name}/{version}', '--remote', remote]
+        print(*args)
+        subprocess.run(args, check=True)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Script to call different functions.")
@@ -288,6 +313,11 @@ def main():
     build_parser.add_argument("--Configuration", help="Target", default='Release')
 
     package_parser = subparsers.add_parser("Package", help="Package")
+    package_parser.add_argument("--Project", help="Project", default=os.getcwd())
+    package_parser.add_argument("--Target", help="Target")
+    package_parser.add_argument("--Generator", help="Generator", default=None)
+    package_parser.add_argument("--Configuration", help="Target", default='Release')
+    package_parser.add_argument("--Deploy", help="Deploy", default=None)
 
     args = parser.parse_args()
     if not ProjectTools().run(args):
