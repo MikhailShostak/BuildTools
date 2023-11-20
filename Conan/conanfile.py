@@ -136,8 +136,8 @@ class TargetGenerator(ConanFile):
 
         if not package_version:
             package_version = self.target.get('PackageVersion', self.project_version)
-
-        self.requires(package_name.lower() + '/' + package_version, **kwargs)
+        
+        self.requires(package_name.lower() + '/' + package_version, override=bool(dependency.get('Override', False)), **kwargs)
 
 
     def requirements(self):
@@ -152,7 +152,7 @@ class TargetGenerator(ConanFile):
             self.add_dependency(dependency, transitive_headers=False, transitive_libs=False)
 
         for dependency in self.target.get('PrivateDependencyOverrides', []):
-            self.add_dependency(dependency, transitive_headers=False, transitive_libs=False, override=True)
+            self.add_dependency(dependency, transitive_headers=False, transitive_libs=False)
 
     def layout(self):
         self.folders.build = str(self.settings.build_type)
