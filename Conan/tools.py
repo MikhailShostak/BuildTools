@@ -273,10 +273,12 @@ class ProjectTools:
 
 
     def build(self):
+        import multiprocessing
+        
         print("Building...")
 
         os.chdir(self.configuration_dir)
-        args = ["cmake", "--build", self.configuration_dir, f'--config={self.configuration}']
+        args = ["cmake", "--build", self.configuration_dir, f'--config={self.configuration}', '--', '-j', str(multiprocessing.cpu_count())]
         print(*args)
         subprocess.run(args, check=True)
 
