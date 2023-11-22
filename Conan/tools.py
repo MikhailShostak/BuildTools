@@ -36,6 +36,7 @@ class ProjectTools:
             os.makedirs(self.package_dir, exist_ok=True)
             os.makedirs(self.configuration_dir, exist_ok=True)            
             self.generator = args.Generator
+            self.linkage = args.Linkage.lower()
             self.compile_classes()
             self.generate()
             self.install_dependencies()
@@ -48,6 +49,7 @@ class ProjectTools:
             os.makedirs(self.package_dir, exist_ok=True)
             os.makedirs(self.configuration_dir, exist_ok=True)
             self.generator = args.Generator
+            self.linkage = args.Linkage.lower()
             self.compile_classes()
             self.generate()
             self.install_dependencies()
@@ -216,6 +218,10 @@ class ProjectTools:
         args = ["conan", "install", dst_conanfile, f"--settings=build_type={self.configuration}", "--build=missing"]
         if self.generator:
             args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
+        if self.linkage == 'static':
+            args.extend(['-o', '*:shared=False'])
+        elif self.linkage == 'shared':
+            args.extend(['-o', '*:shared=True'])
         print(*args)
         subprocess.run(args, check=True)
 
@@ -287,6 +293,10 @@ class ProjectTools:
         args = ["conan", "create", os.path.join(self.package_dir, 'conanfile.py'), '--name', self.target.lower(), '--version', self.project['Version'], f"--settings=build_type={self.configuration}", "--build=missing"]
         if self.generator:
             args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
+        if self.linkage == 'static':
+            args.extend(['-o', '*:shared=False'])
+        elif self.linkage == 'shared':
+            args.extend(['-o', '*:shared=True'])
         print(*args)
         subprocess.run(args, check=True)
 
@@ -307,6 +317,7 @@ def main():
     generate_parser.add_argument("--Project", help="Project", default=os.getcwd())
     generate_parser.add_argument("--Target", help="Target")
     generate_parser.add_argument("--Generator", help="Generator", default=None)
+    generate_parser.add_argument("--Linkage", help="Static", default=str())
     generate_parser.add_argument("--Configuration", help="Target", default='Release')
 
     build_parser = subparsers.add_parser("Build", help="Build")
@@ -319,6 +330,7 @@ def main():
     package_parser.add_argument("--Target", help="Target")
     package_parser.add_argument("--Generator", help="Generator", default=None)
     package_parser.add_argument("--Configuration", help="Target", default='Release')
+    package_parser.add_argument("--Linkage", help="Static", default=str())
     package_parser.add_argument("--Deploy", help="Deploy", default=None)
 
     args = parser.parse_args()
