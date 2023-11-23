@@ -15,6 +15,10 @@ python -m pip install --upgrade pip
 
 pip install -r %ROOT%\requirements.txt
 
+pushd %ROOT%\DevTools
+conan install .
+popd
+
 call %ROOT%\Terminal.bat
 
 if errorlevel 1 pause
