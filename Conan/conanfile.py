@@ -412,8 +412,11 @@ class TargetGenerator(ConanFile):
         self.cpp_info.includedirs = ['.', f'{self.target_name}/Include']
 
         target_type = self.target['Type']
-        if target_type == 'Library' or target_type == 'Plugin':
-            binaries = [self.get_binaries_folder()]
+
+        binaries = [self.get_binaries_folder()]
+        if target_type == 'Application':
             self.cpp_info.bindirs = binaries
+
+        if target_type == 'Library' or target_type == 'Plugin':
             self.cpp_info.libdirs = binaries
             self.cpp_info.libs = [os.path.basename(self.target_name)]
