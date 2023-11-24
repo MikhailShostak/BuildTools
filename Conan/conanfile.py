@@ -71,6 +71,10 @@ class TargetGenerator(ConanFile):
     def target_dir(self):
         return PureWindowsPath(os.path.join(self.project_source_dir, self.target_name)).as_posix()
 
+    @property
+    def cmake_build_folder(self):
+        return os.path.join(self.build_folder)
+
     def collect_file_paths(self, folder, extension):
         paths = glob.glob(f'{self.target_dir}/{folder}/**/.*.{extension}', recursive=True) + glob.glob(f'{self.target_dir}/{folder}/**/*.{extension}', recursive=True)
         return [PureWindowsPath((os.path.normpath(path))).as_posix() for path in paths]
@@ -79,7 +83,7 @@ class TargetGenerator(ConanFile):
         return [name for name in glob.glob(f'{self.target_dir}/{folder}/**/*/', recursive=True) if os.path.isdir(name)]
 
     def save_file(self, path, content):
-        path = os.path.join(script_folder, path)
+        path = os.path.join(self.cmake_build_folder, path)
         print('Write:', path)
         
         content_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -104,8 +108,8 @@ class TargetGenerator(ConanFile):
         copy(self, os.path.join(self.target_name, '*.Target'), self.project_base_dir, self.export_folder)
 
     def export_sources(self):
-        copy(self, 'CMakeLists.txt', self.recipe_folder, self.export_sources_folder)
-        copy(self, '*.hpp', self.recipe_folder, self.export_sources_folder)
+        #copy(self, 'CMakeLists.txt', self.recipe_folder, self.export_sources_folder)
+        #copy(self, '*.hpp', self.recipe_folder, self.export_sources_folder)
         copy(self, '*.Project', self.project_base_dir, self.export_sources_folder)
         copy(self, f'{self.target_name}/**', self.project_base_dir, self.export_sources_folder)
     
@@ -156,19 +160,22 @@ class TargetGenerator(ConanFile):
 
     def layout(self):
         self.folders.build = str(self.settings.build_type)
-
-    def get_cmake_project_dir(self):
-        return script_folder
     
     def make_source_path(self, path):
-        return '${PROJECT_SOURCE_ROOT_FOLDER}/' + PureWindowsPath(os.path.relpath(path, start=self.project_base_dir)).as_posix()
+        return '${PROJECT_SOURCE_ROOT_FOLDER}/' + PureWindowsPath(os.path.relpath(path, start=self.project_source_dir)).as_posix()
 
     def make_source_paths(self, paths):
         return [self.make_source_path(path) for path in paths]
 
     def generate(self):
         print('**** GENERATE')
-        cmake_project_path = 'CMakeLists.txt'
+        print('\tCWD: ', os.getcwd())
+        print('\tPROJECT DIR: ', self.project_base_dir, self.project_source_dir)
+        print('\tSOURCE DIR: ', self.source_folder)
+        print('\tBUILD DIR: ', self.build_folder, self.cmake_build_folder)
+        print('\tTARGET DIR: ', self.target_dir)
+
+        cmake_project_path = os.path.join(self.cmake_build_folder, 'CMakeLists.txt')
         self.output.info(f'Generate {cmake_project_path}')
 
         cmake_find_packages = []
@@ -200,14 +207,10 @@ class TargetGenerator(ConanFile):
         print("Source Base Dir:", source_base_dir)
         print("Include Base Dir:", include_base_dir)
 
-        print('**** CWD: ', os.getcwd())
-        print('**** SOURCE DIR: ', self.source_folder)
-        print('**** BUILD DIR: ', self.build_folder)
-        print('**** TARGET DIR: ', self.target_dir)
         source_file_paths = []
         for e in ['cpp']:
             source_file_paths.extend(self.collect_file_paths(source_base_dir, e) + self.collect_file_paths(include_base_dir, e))
-
+        print('**** SOURCES: ', source_file_paths)
         public_module_source_file_paths = []
         private_module_source_file_paths = []
         for e in ['ixx']:
@@ -233,10 +236,8 @@ class TargetGenerator(ConanFile):
         precompile_private_haders = self.target.get('PrecompilePrivateHeaders', precompile_local_haders)
 
         package_header_file_name = f'{cmake_target_name}.hpp'
-        package_header_file_path = os.path.join(script_folder, package_header_file_name)
 
         precompiled_header_file_name = f'{cmake_target_name}.pch.hpp'
-        precompiled_header_file_path = os.path.join(script_folder, package_header_file_name)
 
         def write_include(stream, path, local=True):
             relpath = os.path.relpath(path, start=f'{self.target_dir}/{include_base_dir}') if local else path
@@ -367,8 +368,7 @@ class TargetGenerator(ConanFile):
         self.save_file(cmake_project_path, cmake_content)
 
         cmake = CMake(self)
-        print('**** CMAKE:', os.getcwd(), self.get_cmake_project_dir(), self.project_base_dir, self.project_source_dir)
-        cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir })
+        cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir }, build_script_folder=self.cmake_build_folder)
 
         bat_files = glob.glob("conanrunenv-*.bat")
 
@@ -386,21 +386,21 @@ class TargetGenerator(ConanFile):
                 f.write(path_line)
 
     def build(self):
-        print('**** Build:', os.getcwd(), self.get_cmake_project_dir(), self.project_base_dir, self.project_source_dir)
+        print('**** Build:', os.getcwd(), self.project_base_dir, self.project_source_dir)
         cmake = CMake(self)
-        cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir })
+        cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir }, build_script_folder=self.cmake_build_folder)
         cmake.build()
-    
+
     def get_package_subfolder(self, subfolder):
         return os.path.join(self.package_folder, self.target_name, subfolder)
     
     def get_binaries_folder(self):
-        return self.get_package_subfolder('Binaries')
+        p = self.get_package_subfolder('Binaries')
+        return p if os.path.exists(p) else os.path.join(self.package_folder, str(self.settings.build_type))
 
     def package(self):
         print(f'**** PACKAGE: {self.source_folder} -> {self.package_folder}')
         copy(self, f'**', os.path.join(self.source_folder, self.target_name, 'Assets'), self.get_binaries_folder())
-        copy(self, f'{self.target_name}.hpp', self.source_folder, self.package_folder)
         copy(self, f'{self.target_name}/Include/**.h', self.source_folder, self.package_folder)
         copy(self, f'{self.target_name}/Include/**.hpp', self.source_folder, self.package_folder)
         copy(self, f'{self.target_name}/Include/**.inl', self.source_folder, self.package_folder)
@@ -408,15 +408,18 @@ class TargetGenerator(ConanFile):
         copy(self, self.target_name + '.*', os.path.join(self.source_folder, str(self.settings.build_type)), self.get_binaries_folder())
 
     def package_info(self):
-        print('**** PACKAGE INFO')
-        self.cpp_info.includedirs = ['.', f'{self.target_name}/Include']
-
-        target_type = self.target['Type']
+        print('**** PACKAGE INFO:', self.package_folder)
+        includes = [self.get_binaries_folder()]
+        if os.path.exists(os.path.join(self.package_folder, self.target_name)):
+            includes.append(f'{self.target_name}/Include')
+        else:
+            includes.append(f'{self.project_base_dir}/{self.target_name}/Include')
+        self.cpp_info.includedirs = includes
 
         binaries = [self.get_binaries_folder()]
-        if target_type == 'Application':
-            self.cpp_info.bindirs = binaries
+        self.cpp_info.bindirs = binaries
 
+        target_type = self.target['Type']
         if target_type == 'Library' or target_type == 'Plugin':
             self.cpp_info.libdirs = binaries
             self.cpp_info.libs = [os.path.basename(self.target_name)]

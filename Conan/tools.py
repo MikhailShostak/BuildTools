@@ -39,20 +39,18 @@ class ProjectTools:
             self.linkage = args.Linkage.lower()
             self.compile_classes()
             self.generate()
+            self.make_dev_package()
             self.install_dependencies()
         elif args.Command == "Build":
             self.compile_classes()
             self.copy_assets()
             self.build()
         elif args.Command == "Package":
-            print(f"Create build directory: {self.configuration_dir}")
             os.makedirs(self.package_dir, exist_ok=True)
-            os.makedirs(self.configuration_dir, exist_ok=True)
             self.generator = args.Generator
             self.linkage = args.Linkage.lower()
             self.compile_classes()
             self.generate()
-            self.install_dependencies()
             self.package()
             if args.Deploy:
                 self.deploy(args.Deploy)
@@ -96,7 +94,7 @@ class ProjectTools:
                 "label": generate_task_name,
                 "type": "shell",
                 "command": get_tools_path(),
-                "args": ["Generate", f"--Target={target_name}", f"--Configuration={self.configuration}", f"--Generator=Ninja"]
+                "args": ["Generate", f"--Target={target_name}", f"--Configuration={self.configuration}", f'--Linkage={self.linkage}', f"--Generator={self.generator}"]
             })
 
             if target.get('Type', None) != 'Interface':
@@ -208,13 +206,14 @@ class ProjectTools:
         print(f"Copy: {src_conanfile} to {dst_conanfile}")
         shutil.copy(src_conanfile, dst_conanfile)
         
+    def make_dev_package(self):
+        dst_conanfile = os.path.join(self.package_dir, 'conanfile.py')
         args = ['conan', 'editable', 'add', dst_conanfile, '--name', self.target.lower(), '--version', self.project['Version'], '--user', 'dev']
         print(*args)
         subprocess.run(args, check=True)
 
     def install_dependencies(self):
         dst_conanfile = os.path.join(self.package_dir, 'conanfile.py')
-        os.chdir(self.build_dir)
         args = ["conan", "install", dst_conanfile, f"--settings=build_type={self.configuration}", "--build=missing"]
         if self.generator:
             args.extend(["-c", f"tools.cmake.cmaketoolchain:generator={self.generator}"])
@@ -228,7 +227,6 @@ class ProjectTools:
     def compile_classes(self):
         print("Compile classes...")
 
-        os.chdir(self.configuration_dir)
         args = [os.path.join(script_folder, '..', 'ClassGen.bat'), self.target_dir]
         print(*args)
         subprocess.run(args, check=True)
