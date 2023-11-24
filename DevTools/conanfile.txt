@@ -6,4 +6,5 @@ editor/0.0.1
 VirtualRunEnv
 
 [options]
-*:shared=True
+*:shared=False
+*:build_type=Release
