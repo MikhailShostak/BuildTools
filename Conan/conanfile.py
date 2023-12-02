@@ -370,21 +370,6 @@ class TargetGenerator(ConanFile):
         cmake = CMake(self)
         cmake.configure(variables={ 'PROJECT_SOURCE_ROOT_FOLDER': self.project_source_dir }, build_script_folder=self.cmake_build_folder)
 
-        bat_files = glob.glob("conanrunenv-*.bat")
-
-        for bat_file in bat_files:
-            with open(bat_file, "r") as f:
-                lines = f.readlines()
-
-            path_line = '\n'
-            for line in lines:
-                if line.startswith('set "PATH='):
-                    path_line = line.strip()[5:-2]
-                    break
-
-            with open(os.path.join(str(self.settings.build_type), "conanrun.env"), "w") as f:
-                f.write(path_line)
-
     def build(self):
         print('**** Build:', os.getcwd(), self.project_base_dir, self.project_source_dir)
         cmake = CMake(self)

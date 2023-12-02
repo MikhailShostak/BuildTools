@@ -15,6 +15,21 @@ def get_tools_path():
 
 class ProjectTools:
 
+    def is_outdated(self, path):
+        project_path = self.project_path
+        target_path = os.path.join(self.target_dir, self.target + '.target')
+        last_update_path = path
+
+        project_mtime = os.path.getmtime(project_path)
+        target_mtime = os.path.getmtime(target_path)
+
+        if os.path.exists(last_update_path):
+            last_update_mtime = os.path.getmtime(last_update_path)
+        else:
+            last_update_mtime = 0
+
+        return last_update_mtime < project_mtime or last_update_mtime < target_mtime
+
     def run(self, args):
         self.project_dir = args.Project
         self.project_name = os.path.basename(self.project_dir) + ".project"
@@ -30,25 +45,35 @@ class ProjectTools:
         self.build_dir = os.path.join(self.project_dir, '.Build', self.target)
         self.package_dir = self.build_dir
         self.configuration_dir = os.path.join(self.build_dir, self.configuration)
+        self.generator = args.Generator
+        self.linkage = args.Linkage.lower()
 
         if args.Command == "Generate":
             print(f"Create build directory: {self.configuration_dir}")
             os.makedirs(self.package_dir, exist_ok=True)
-            os.makedirs(self.configuration_dir, exist_ok=True)            
-            self.generator = args.Generator
-            self.linkage = args.Linkage.lower()
+            os.makedirs(self.configuration_dir, exist_ok=True)
             self.compile_classes()
             self.generate()
             self.make_dev_package()
             self.install_dependencies()
+            self.make_environment_file()
         elif args.Command == "Build":
+            last_update_path = os.path.join(self.configuration_dir, 'last_update.txt')
+            if self.is_outdated(last_update_path):
+                print(f"Create build directory: {self.configuration_dir}")
+                os.makedirs(self.package_dir, exist_ok=True)
+                os.makedirs(self.configuration_dir, exist_ok=True)
+                self.generate()
+                self.make_dev_package()
+                self.install_dependencies()
+                open(last_update_path, 'w').close()
+            self.make_environment_file()
+            
             self.compile_classes()
             self.copy_assets()
             self.build()
         elif args.Command == "Package":
             os.makedirs(self.package_dir, exist_ok=True)
-            self.generator = args.Generator
-            self.linkage = args.Linkage.lower()
             self.compile_classes()
             self.generate()
             self.package()
@@ -79,42 +104,23 @@ class ProjectTools:
             target_name = target['Name']
             target_short_name = os.path.basename(target_name)
 
-            generate_task_name = f'G: {target_short_name}'
-            generate_task = None
+            build_task_name = target_short_name
+            build_task = None
             for c in data['tasks']:
-                if c.get('label', None) == generate_task_name:
-                    generate_task = c
+                if c.get('label', None) == build_task_name:
+                    build_task = c
                     break
 
-            if generate_task == None:
-                data['tasks'].append({'label': generate_task_name})
-                generate_task = data['tasks'][-1]
+            if build_task == None:
+                data['tasks'].append({'label': build_task_name})
+                build_task = data['tasks'][-1]
 
-            generate_task.update({
-                "label": generate_task_name,
+            build_task.update({
+                "label": build_task_name,
                 "type": "shell",
                 "command": get_tools_path(),
-                "args": ["Generate", f"--Target={target_name}", f"--Configuration={self.configuration}", f'--Linkage={self.linkage}', f"--Generator={self.generator}"]
+                "args": ["Build", f"--Target={target_name}", f"--Configuration={self.configuration}", f'--Linkage={self.linkage}', f"--Generator={self.generator}"]
             })
-
-            if target.get('Type', None) != 'Interface':
-                build_task_name = f'B: {target_short_name}'
-                build_task = None
-                for c in data['tasks']:
-                    if c.get('label', None) == build_task_name:
-                        build_task = c
-                        break
-
-                if build_task == None:
-                    data['tasks'].append({'label': build_task_name})
-                    build_task = data['tasks'][-1]
-
-                build_task.update({
-                    "label": build_task_name,
-                    "type": "shell",
-                    "command": get_tools_path(),
-                    "args": ["Build", f"--Target={target_name}", f"--Configuration={self.configuration}"]
-                })
 
         with open(path, 'w') as f:
             json.dump(data, f, indent=4)
@@ -147,7 +153,7 @@ class ProjectTools:
             configuration.update({
                 "type": "cppvsdbg",
                 "request": "launch",
-                "preLaunchTask": f"B: {target_name}",
+                "preLaunchTask": target_name,
                 "program": f"{vscode_program_folder}/{os.path.basename(target_name)}.exe",
                 "envFile": f"{vscode_program_folder}/conanrun.env",
                 "cwd": vscode_program_folder,
@@ -224,6 +230,22 @@ class ProjectTools:
         print(*args)
         subprocess.run(args, check=True)
 
+    def make_environment_file(self):
+        bat_files = glob.glob(os.path.join(self.package_dir, "conanrunenv-*.bat"))
+
+        for bat_file in bat_files:
+            with open(bat_file, "r") as f:
+                lines = f.readlines()
+
+            path_line = '\n'
+            for line in lines:
+                if line.startswith('set "PATH='):
+                    path_line = line.strip()[5:-1]
+                    break
+
+            with open(os.path.join(self.configuration_dir, "conanrun.env"), "w") as f:
+                f.write(path_line)
+
     def compile_classes(self):
         print("Compile classes...")
 
@@ -277,8 +299,12 @@ class ProjectTools:
 
 
     def build(self):
+
+        for target in self.project.get('Targets', []):
+            if target['Name'] == self.target and target.get('Type', None) == 'Interface':
+                return
+
         import multiprocessing
-        
         print("Building...")
 
         os.chdir(self.configuration_dir)
@@ -321,6 +347,8 @@ def main():
     build_parser = subparsers.add_parser("Build", help="Build")
     build_parser.add_argument("--Project", help="Project", default=os.getcwd())
     build_parser.add_argument("--Target", help="Target")
+    build_parser.add_argument("--Generator", help="Generator", default=None)
+    build_parser.add_argument("--Linkage", help="Static", default=str())
     build_parser.add_argument("--Configuration", help="Target", default='Release')
 
     package_parser = subparsers.add_parser("Package", help="Package")
