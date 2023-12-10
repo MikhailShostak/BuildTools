@@ -1,10 +1,10 @@
 [requires]
-classgencompiler/0.0.1
-editor/0.0.1
+classgencompiler/[>=0.0.1]
+editor/[>=0.0.1]
 
 [generators]
 VirtualRunEnv
 
 [options]
-*:shared=False
+*:shared=True
 *:build_type=Release

@@ -249,7 +249,7 @@ class ProjectTools:
     def compile_classes(self):
         print("Compile classes...")
 
-        args = [os.path.join(script_folder, '..', 'ClassGen.bat'), self.target_dir]
+        args = [os.path.join(script_folder, '..', 'RunClassGenCompiler.bat'), self.target_dir]
         print(*args)
         subprocess.run(args, check=True)
 
