@@ -141,7 +141,7 @@ class TargetGenerator(ConanFile):
         if not package_version:
             package_version = self.target.get('PackageVersion', self.project_version)
         
-        self.requires(package_name.lower() + '/' + package_version, override=bool(dependency.get('Override', False)), **kwargs)
+        self.requires(package_name.lower() + '/' + package_version, force=dependency.get('Force', False), override=bool(dependency.get('Override', False)), **kwargs)
 
 
     def requirements(self):
