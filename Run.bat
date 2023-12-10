@@ -1,4 +1,5 @@
 @echo off
+setlocal
 set ROOT=%~dp0
 set CONAN_HOME=%ROOT%\.conan
 set VS_VERSION=2022
@@ -11,3 +12,4 @@ REM call "%ProgramFiles%\Microsoft Visual Studio\%VS_VERSION%\Community\VC\Auxil
 call %ROOT%\.venv\Scripts\activate.bat >NUL
 
 %*
+endlocal
