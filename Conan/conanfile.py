@@ -29,6 +29,12 @@ class TargetGenerator(ConanFile):
         self.project_path = os.path.join(script_folder, package_info['Project'])
         self.target_name = package_info['Target']
 
+        self.project_user = {}
+        self.project_user_path = os.path.join(os.path.dirname(self.project_path), '.' + os.path.splitext(os.path.basename(self.project_path))[0] + '.user')
+        if os.path.exists(self.project_user_path):
+            with open(self.project_user_path, 'r') as f:
+                self.project_user = yaml.load(f, Loader=yaml.FullLoader)
+
         self.project_base_dir = PureWindowsPath(os.path.normpath(os.path.dirname(self.project_path))).as_posix()
 
     @property
@@ -134,28 +140,59 @@ class TargetGenerator(ConanFile):
                 self.options[package_name].shared = not package_static
 
     def add_dependency(self, dependency, **kwargs):
-        dependency_name = dependency['Name'].split('/')
+        receipt_parts = dependency['Name'].split('@')
+        package = receipt_parts[0]
+        package_channel = receipt_parts[1] if len(receipt_parts) > 1 else None
+
+        dependency_name = package.split('/')
         package_name = dependency_name[0]
         package_version = dependency_name[1] if len(dependency_name) > 1 else None
 
         if not package_version:
             package_version = self.target.get('PackageVersion', self.project_version)
         
+        if package_channel:
+            package_version += '@' + package_channel
+        
         self.requires(package_name.lower() + '/' + package_version, force=dependency.get('Force', False), override=bool(dependency.get('Override', False)), **kwargs)
+
+    def get_dependencies(self, type):
+        dependencies = list(self.target.get(type, []))
+        print(f'[Initial {type}]:{dependencies}')
+        for p in self.dev_packages:
+            for d in dependencies:
+                if p.lower().split('/')[0] == d['Name'].lower().split('/')[0]:
+                    d['Name'] = p.lower() + '@dev'
+                    d['Force'] = True
+                    self.overriden_packages.append(p.lower())
+                    break
+        print(f'[Overriden {type}]:{dependencies}')
+        return dependencies
 
 
     def requirements(self):
         print('**** REQUIREMENTS')
-        for dependency in self.target.get('LocalDependencies', []):
+        self.overriden_packages = []
+        self.dev_packages = list(self.project_user.get('Edit', []))
+        print('[Dev Dependencies]:', self.dev_packages)
+
+        local_dependencies = self.get_dependencies('LocalDependencies')
+        public_dependencies = self.get_dependencies('PublicDependencies')
+        private_dependencies = self.get_dependencies('PrivateDependencies')
+        for p in self.dev_packages:
+            if not p.lower() in self.overriden_packages:
+                private_dependencies.append({
+                    'Name': p.lower() + '@dev',
+                    'Override': True,
+                })
+
+        for dependency in local_dependencies:
             self.add_dependency(dependency, transitive_headers=True, transitive_libs=True)
 
-        for dependency in self.target.get('PublicDependencies', []):
+        for dependency in public_dependencies:
             self.add_dependency(dependency, transitive_headers=True, transitive_libs=True)
 
-        for dependency in self.target.get('PrivateDependencies', []):
-            self.add_dependency(dependency, transitive_headers=False, transitive_libs=False)
-
-        for dependency in self.target.get('PrivateDependencyOverrides', []):
+        for dependency in private_dependencies:
             self.add_dependency(dependency, transitive_headers=False, transitive_libs=False)
 
     def layout(self):

@@ -18,17 +18,15 @@ class ProjectTools:
     def is_outdated(self, path):
         project_path = self.project_path
         target_path = os.path.join(self.target_dir, self.target + '.target')
+        project_user_path = os.path.join(os.path.dirname(project_path), '.' + os.path.splitext(os.path.basename(project_path))[0] + '.user')
         last_update_path = path
 
         project_mtime = os.path.getmtime(project_path)
         target_mtime = os.path.getmtime(target_path)
+        project_user_mtime = os.path.getmtime(project_user_path) if os.path.exists(project_user_path) else 0
+        last_update_mtime = os.path.getmtime(last_update_path) if os.path.exists(last_update_path) else 0
 
-        if os.path.exists(last_update_path):
-            last_update_mtime = os.path.getmtime(last_update_path)
-        else:
-            last_update_mtime = 0
-
-        return last_update_mtime < project_mtime or last_update_mtime < target_mtime
+        return last_update_mtime < project_mtime or last_update_mtime < target_mtime or (os.path.exists(project_user_path) and last_update_mtime < project_user_mtime)
 
     def run(self, args):
         self.project_dir = args.Project
