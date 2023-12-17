@@ -5,4 +5,4 @@ classgencompiler/0.0.1@dev
 VirtualRunEnv
 
 [options]
-*:shared=True
+*:shared=False
