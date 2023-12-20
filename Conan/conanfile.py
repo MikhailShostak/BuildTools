@@ -442,6 +442,11 @@ class TargetGenerator(ConanFile):
         self.cpp_info.bindirs = binaries
 
         target_type = self.target['Type']
+        if target_type == 'Application':
+            path = self.get_binaries_folder()
+            self.buildenv_info.prepend_path("PATH", path)
+            self.runenv_info.prepend_path("PATH", path)
+        
         if target_type == 'Library' or target_type == 'Plugin':
             self.cpp_info.libdirs = binaries
             self.cpp_info.libs = [os.path.basename(self.target_name)]
