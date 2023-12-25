@@ -13,7 +13,6 @@ if %ERRORLEVEL% == 0 (
 )
 for %%i in (%VS_EDITIONS%) do (
     if exist "%ProgramFiles%\Microsoft Visual Studio\%VS_VERSION%\%%i\VC\Auxiliary\Build\vcvars64.bat" (
-        echo Using VS%VS_VERSION% %VS_EDITIONS%...
         call "%ProgramFiles%\Microsoft Visual Studio\%VS_VERSION%\%%i\VC\Auxiliary\Build\vcvars64.bat" >NUL
         goto End
     )
